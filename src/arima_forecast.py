@@ -1,41 +1,55 @@
-import pandas as pd
+"""ARIMA time series forecasting model."""
+
 import matplotlib.pyplot as plt
 from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import mean_squared_error
-import math
+import config
+from utils import (
+    load_and_preprocess,
+    aggregate_demand,
+    train_test_split_timeseries,
+    calculate_metrics,
+    save_model,
+    print_metrics
+)
 
 
-# Load and preprocess data
-df = pd.read_csv("dataset/Historical Product Demand.csv")
-df.dropna(subset=['Date', 'Order_Demand'], inplace=True) # Removes rows where either Data or Order_Demand is missing
-df['Date'] = pd.to_datetime(df['Date'], errors='coerce') # Converts Date to Datetime Format
-df['Order_Demand'] = pd.to_numeric(df['Order_Demand'], errors='coerce') # Converts Order_Demand to Numeric
-df.dropna(subset=['Order_Demand'], inplace=True) # Removes remaining NaN Values
+def main():
+    """Train and evaluate ARIMA model."""
+    # Load and preprocess data
+    df = load_and_preprocess(config.DATA_PATH, config.DATE_COLUMN, config.DEMAND_COLUMN)
+    
+    # Aggregate data monthly
+    sales_trend = aggregate_demand(df, config.DATE_COLUMN, config.DEMAND_COLUMN, config.AGGREGATION_FREQ)
+    
+    # Train-test split
+    train, test = train_test_split_timeseries(sales_trend, config.TRAIN_TEST_SPLIT)
+    
+    # Fit ARIMA model
+    arima_model = ARIMA(train, order=config.ARIMA_ORDER)
+    arima_fit = arima_model.fit()
+    
+    # Forecast
+    forecast = arima_fit.forecast(steps=len(test))
+    
+    # Calculate metrics
+    metrics = calculate_metrics(test.values, forecast.values)
+    print_metrics("ARIMA", metrics)
+    
+    # Save model
+    save_model(arima_fit, 'arima_model.pkl')
+    
+    # Plot actual vs forecast
+    plt.figure(figsize=config.PLOT_FIGSIZE)
+    plt.plot(test.index, test, label='Actual', linewidth=2)
+    plt.plot(test.index, forecast, label='Forecast', color='orange', linewidth=2)
+    plt.title('ARIMA Model Forecast', fontsize=14)
+    plt.xlabel('Date')
+    plt.ylabel('Order Demand')
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
 
-# Aggregate data monthly
-sales_trend = df.groupby(pd.Grouper(key='Date', freq='M'))['Order_Demand'].sum() # Sums up the Order_Demand for each month to calculate total montly sales
 
-# Train-test split
-train_size = int(len(sales_trend) * 0.8)
-train, test = sales_trend[:train_size], sales_trend[train_size:]
-
-# Fit ARIMA model
-arima_model = ARIMA(train, order=(2, 1, 2))  # Adjust p, d, q based on grid search or AIC/BIC analysis
-arima_fit = arima_model.fit()
-
-# Forecast
-forecast = arima_fit.forecast(steps=len(test))
-
-# Calculate RMSE
-rmse = math.sqrt(mean_squared_error(test, forecast))
-print(f"ARIMA RMSE: {rmse}")
-
-# Plot actual vs forecast
-plt.figure(figsize=(12, 6))
-plt.plot(test.index, test, label='Actual')
-plt.plot(test.index, forecast, label='Forecast', color='orange')
-plt.title('ARIMA Model Forecast')
-plt.xlabel('Date')
-plt.ylabel('Order Demand')
-plt.legend()
-plt.show()
+if __name__ == "__main__":
+    main()
